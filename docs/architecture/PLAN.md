@@ -1,11 +1,16 @@
 # WarehouseIQ — V1 Architecture & Delivery Plan
 
-**Status:** Documentation complete through the final pre-M0 architecture
-review. **M0 is complete** — schema, RLS, hash-chained ledger, and
-multi-tenant isolation are built and verified against a real Postgres
-instance (`supabase/tests/m0_acceptance.sql`, all 6 checks passing); repo
-scaffolding exists for both apps. No product UI has been built yet — that
-starts with M1.
+**Status:** **M0 and M1 are complete.** M0: schema, RLS, hash-chained
+ledger, multi-tenant isolation — verified against a real Postgres instance
+(`supabase/tests/m0_acceptance.sql`, all 6 checks passing). M1: the
+Manager web app (`apps/web`) — organization signup, warehouses, projects,
+locations with bulk creation, QR code generation/printing, Expected
+Inventory (manual entry + CSV import wizard), and the manager dashboard.
+New RPC logic (`create_organization`, `stage_csv_import`,
+`commit_csv_import`) is verified against Postgres
+(`supabase/tests/m1_acceptance.sql`, all checks passing); the Next.js app
+itself typechecks and builds cleanly. The Worker App has not been started
+— that's M2.
 **Scope:** MVP suitable for customer/investor demos. Not the final
 enterprise product.
 
@@ -184,8 +189,18 @@ build **one milestone at a time** and stop for review after each.
   `UPDATE`/`DELETE` a ledger row; tampering with a ledger row (simulating
   elevated database access bypassing the revoked grant) is detected by
   recomputing the hash chain. All checks pass.*
-- **M1** — Manager Dashboard setup tools: Warehouses, Projects, Locations,
-  QR generation, Expected Inventory (manual entry + CSV import).
+- **M1 (complete)** — Manager Dashboard setup tools: organization signup,
+  Warehouses, Projects, Locations (with bulk pattern creation), QR
+  generation/printing, Expected Inventory (manual entry + CSV import
+  wizard), Manager Dashboard home, Settings. *Verified: `create_organization`,
+  `stage_csv_import`, and `commit_csv_import` pass all checks in
+  `supabase/tests/m1_acceptance.sql` (atomic org creation, required-field/
+  numeric/duplicate/unknown-project validation, partial commit). The
+  Next.js app typechecks and builds cleanly (`next build`). Not verified:
+  a live browser session against a real Supabase Auth/PostgREST backend —
+  no Supabase project has been provisioned yet, and this environment has
+  no Docker to run one locally; that's the first thing to check by hand
+  once a real project exists.*
 - **M2** — Worker App core loop: scan → photograph → AI extraction →
   review against Expected Inventory (including Log as Untracked) → confirm.
 - **M3** — Move, search, pallet detail, immutable timeline, lifecycle

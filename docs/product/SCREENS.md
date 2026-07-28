@@ -614,6 +614,43 @@ Step 4: Done
 
 # Worker App (mobile)
 
+**Changes shipped in M2, superseding the entries below where they
+conflict:**
+
+1. **No separate "home" screen.** Scan Location *is* the post-login
+   landing state — there is no menu, dashboard, or navigation stack a
+   worker chooses from. `Receive Inventory (worker home)` below describes
+   the original concept; the shipped app collapses it into Scan Location
+   itself, matching the M2 brief's "workers should never need to navigate
+   menus during a normal receiving workflow" literally, in the app's
+   architecture, not just its visuals.
+2. **Scan the location once per session, then loop.** The original
+   step-by-step (scan → photo → confirm, implying once per pallet) is
+   revised: after one location scan, Photograph → Review/Confirm repeats
+   automatically for as many pallets as are actually at that location,
+   with "Change Location" always one tap away. Recommended and built this
+   way because most receiving is multi-pallet at one spot — re-scanning a
+   QR code before every single pallet fails the M2 brief's own test ("if I
+   were scanning 500 pallets today, would I enjoy this").
+3. **AI Review Screen and Confirm Inventory are one screen, not two.**
+   Splitting them was the original design; M2 merges them because a
+   separate review screen is exactly what stands between "everything
+   matched" and "one tap to confirm." The merged screen is close to
+   invisible when clean (a one-line summary and a single Confirm button)
+   and expands only for what's actually flagged — never a full
+   field-by-field form nobody needed to see. See
+   `docs/architecture/PLAN.md`'s M2 notes and
+   `apps/mobile/src/screens/receiving/ReviewConfirmView.tsx`.
+4. **"Log as Untracked" is a first-class action on this screen**, not a
+   separate flow — when the PO can't be found, the worker sees exactly two
+   buttons (Retake Photo / Log as Untracked), nothing else.
+
+Screens 19-22 below are superseded by the single combined flow in
+`apps/mobile/src/screens/receiving/` (`ScanLocationView`,
+`PhotographView`, `ReviewConfirmView`, orchestrated by `ReceivingFlow`).
+Kept here for the historical design rationale each screen's purpose
+section still explains correctly — only the screen *boundaries* changed.
+
 ## 18. Receive Inventory (worker home)
 
 - **Purpose:** the worker's landing screen — the fastest path into the

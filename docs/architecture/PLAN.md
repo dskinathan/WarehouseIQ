@@ -1,22 +1,31 @@
 # WarehouseIQ — V1 Architecture & Delivery Plan
 
-**Status:** **M0 and M1 are complete.** M0: schema, RLS, hash-chained
+**Status:** **M0, M1, and M2 are complete.** M0: schema, RLS, hash-chained
 ledger, multi-tenant isolation — verified against a real Postgres instance
 (`supabase/tests/m0_acceptance.sql`, all 6 checks passing). M1: the
 Manager web app (`apps/web`) — organization signup, warehouses, projects,
 locations with bulk creation, QR code generation/printing, Expected
-Inventory (manual entry + CSV import wizard), and the manager dashboard.
-New RPC logic (`create_organization`, `stage_csv_import`,
-`commit_csv_import`) is verified against Postgres
-(`supabase/tests/m1_acceptance.sql`, all checks passing); the Next.js app
-itself typechecks and builds cleanly. A pre-M2 architecture review of M1
-found and fixed two real gaps — cross-org foreign-key confusion (RLS
-checked a row's own `org_id` but not its other foreign keys; fixed with
-composite `(fk, org_id)` constraints, DATABASE.md §6b) and a missing audit
-trail for manager-configuration changes (fixed with an automatic
-`log_activity()` trigger, DATABASE.md §6c) — both verified in
-`supabase/tests/m1b_acceptance.sql`. The Worker App has not been started
-— that's M2.
+Inventory (manual entry + CSV import wizard), and the manager dashboard;
+verified in `supabase/tests/m1_acceptance.sql`. A pre-M2 architecture
+review of M1 found and fixed two real gaps — cross-org foreign-key
+confusion (DATABASE.md §6b) and a missing audit trail (DATABASE.md §6c) —
+verified in `supabase/tests/m1b_acceptance.sql`.
+
+**M2: the Worker App receiving loop** (`apps/mobile`) —
+`confirm_pallet_receipt` (the core transactional match/exception/commit
+function, with a `dry_run` mode so the same logic serves both the AI
+Review preview and the real Confirm), `decide_approval`, and rate limiting
+are verified in `supabase/tests/m2_acceptance.sql` (10 checks, including
+idempotency, over-receipt blocking, Log-as-Untracked, and a validated edge
+case where the database itself correctly refuses to approve a duplicate
+label as a second active pallet). The mobile app revises the originally
+specified per-pallet scan flow into scan-location-once-then-loop, and
+merges the AI Review and Confirm screens into one — both explained in
+`docs/product/SCREENS.md`'s Worker App section. `extract-pallet` (the
+Claude Vision call) is written to the real Supabase/Deno contract but
+**not exercised live** — no Anthropic API key, deployed Supabase project,
+or Deno runtime in this environment. Full critique: see the chat message
+accompanying this milestone.
 **Scope:** MVP suitable for customer/investor demos. Not the final
 enterprise product.
 
@@ -207,8 +216,12 @@ build **one milestone at a time** and stop for review after each.
   no Supabase project has been provisioned yet, and this environment has
   no Docker to run one locally; that's the first thing to check by hand
   once a real project exists.*
-- **M2** — Worker App core loop: scan → photograph → AI extraction →
-  review against Expected Inventory (including Log as Untracked) → confirm.
+- **M2 (complete)** — Worker App core loop: scan location once → loop
+  photograph → AI extraction → merged review/confirm against Expected
+  Inventory (including Log as Untracked) → save, then straight back into
+  the loop. *Backend verified in `supabase/tests/m2_acceptance.sql`
+  (10 checks). `extract-pallet` written but not exercised live — no
+  Anthropic key / Deno runtime here.*
 - **M3** — Move, search, pallet detail, immutable timeline, lifecycle
   status updates (Ship/Install/Consume/Scrap).
 - **M4** — Exceptions queue (approvals + review), Activity Log, Warehouse

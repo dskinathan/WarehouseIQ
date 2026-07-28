@@ -1,19 +1,32 @@
-import { StyleSheet, Text, View } from "react-native";
+import { StatusBar } from "expo-status-bar";
+import { View } from "react-native";
+import { AuthProvider, useAuth } from "./src/lib/AuthProvider";
+import LoginScreen from "./src/screens/LoginScreen";
+import ReceivingFlow from "./src/screens/receiving/ReceivingFlow";
+import { theme } from "./src/components/ui";
 
-// Placeholder entry point. M0 is schema/RLS/auth foundations only — the
-// real Worker App screens (docs/product/SCREENS.md: Login, Scan Location,
-// Photograph Pallet, AI Review, Confirm, Move, Search, Pallet Details,
-// Update Lifecycle, Timeline) land starting in M2.
-export default function App() {
-  return (
-    <View style={styles.container}>
-      <Text style={styles.title}>WarehouseIQ</Text>
-      <Text>Worker App — screens land in M2. See docs/product/SCREENS.md.</Text>
-    </View>
-  );
+// No navigation library, deliberately (see docs/architecture/PLAN.md M2
+// notes): the receiving loop is fundamentally a linear state machine, not
+// a set of independently-reachable screens a worker chooses between.
+// React Navigation's screen-stack model would add real complexity for no
+// benefit here, and would work against "workers should never need to
+// navigate menus." AuthGate below is the only top-level branch: logged
+// out sees Login, logged in sees the receiving flow — nothing else.
+function AuthGate() {
+  const { session, loading } = useAuth();
+
+  if (loading) {
+    return <View style={{ flex: 1, backgroundColor: theme.bg }} />;
+  }
+
+  return session ? <ReceivingFlow /> : <LoginScreen />;
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, alignItems: "center", justifyContent: "center" },
-  title: { fontSize: 24, fontWeight: "600", marginBottom: 8 },
-});
+export default function App() {
+  return (
+    <AuthProvider>
+      <StatusBar style="light" />
+      <AuthGate />
+    </AuthProvider>
+  );
+}

@@ -5,7 +5,9 @@
     "version": "0.0.0",
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
-    "plugins": ["expo-camera", "expo-barcode-scanner"],
+    "plugins": [
+      ["expo-camera", { "cameraPermission": "WarehouseIQ needs the camera to scan location QR codes and photograph pallets." }]
+    ],
     "ios": { "supportsTablet": false },
     "android": {}
   }

@@ -9,7 +9,13 @@ Inventory (manual entry + CSV import wizard), and the manager dashboard.
 New RPC logic (`create_organization`, `stage_csv_import`,
 `commit_csv_import`) is verified against Postgres
 (`supabase/tests/m1_acceptance.sql`, all checks passing); the Next.js app
-itself typechecks and builds cleanly. The Worker App has not been started
+itself typechecks and builds cleanly. A pre-M2 architecture review of M1
+found and fixed two real gaps — cross-org foreign-key confusion (RLS
+checked a row's own `org_id` but not its other foreign keys; fixed with
+composite `(fk, org_id)` constraints, DATABASE.md §6b) and a missing audit
+trail for manager-configuration changes (fixed with an automatic
+`log_activity()` trigger, DATABASE.md §6c) — both verified in
+`supabase/tests/m1b_acceptance.sql`. The Worker App has not been started
 — that's M2.
 **Scope:** MVP suitable for customer/investor demos. Not the final
 enterprise product.

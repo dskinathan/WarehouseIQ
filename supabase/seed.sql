@@ -24,14 +24,32 @@ insert into memberships (user_id, org_id, role) values
   ('00000000-0000-0000-0000-00000000000c', '10000000-0000-0000-0000-000000000002', 'manager'),
   ('00000000-0000-0000-0000-00000000000d', '10000000-0000-0000-0000-000000000002', 'worker');
 
+-- Impersonate each org's manager for the remaining inserts so
+-- activity_log.actor_id (NOT NULL by design — an audit trail with an
+-- anonymous actor defeats its own purpose) is populated with a real,
+-- meaningful actor rather than relaxing the constraint for convenience.
+select set_config('request.jwt.claims',
+  json_build_object('sub', '00000000-0000-0000-0000-00000000000a')::text, false);
+
 insert into warehouses (id, org_id, name, timezone) values
-  ('20000000-0000-0000-0000-000000000001', '10000000-0000-0000-0000-000000000001', 'Acme Main Yard', 'America/Denver'),
+  ('20000000-0000-0000-0000-000000000001', '10000000-0000-0000-0000-000000000001', 'Acme Main Yard', 'America/Denver');
+
+insert into projects (id, org_id, name, code) values
+  ('30000000-0000-0000-0000-000000000001', '10000000-0000-0000-0000-000000000001', 'Solar Farm A', 'P-101');
+
+insert into locations (id, org_id, warehouse_id, name) values
+  ('40000000-0000-0000-0000-000000000001', '10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', 'Aisle 3 / Bay 2');
+
+select set_config('request.jwt.claims',
+  json_build_object('sub', '00000000-0000-0000-0000-00000000000c')::text, false);
+
+insert into warehouses (id, org_id, name, timezone) values
   ('20000000-0000-0000-0000-000000000002', '10000000-0000-0000-0000-000000000002', 'Bright Central Warehouse', 'America/Chicago');
 
 insert into projects (id, org_id, name, code) values
-  ('30000000-0000-0000-0000-000000000001', '10000000-0000-0000-0000-000000000001', 'Solar Farm A', 'P-101'),
   ('30000000-0000-0000-0000-000000000002', '10000000-0000-0000-0000-000000000002', 'Substation B', 'P-201');
 
 insert into locations (id, org_id, warehouse_id, name) values
-  ('40000000-0000-0000-0000-000000000001', '10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', 'Aisle 3 / Bay 2'),
   ('40000000-0000-0000-0000-000000000002', '10000000-0000-0000-0000-000000000002', '20000000-0000-0000-0000-000000000002', 'Yard - North');
+
+select set_config('request.jwt.claims', '', false);

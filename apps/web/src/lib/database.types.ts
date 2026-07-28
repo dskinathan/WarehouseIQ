@@ -20,6 +20,7 @@ export interface Organization {
   id: string;
   name: string;
   slug: string;
+  default_timezone: string;
   created_at: string;
   archived_at: string | null;
 }

@@ -47,3 +47,11 @@ begin
   end if;
 end
 $$;
+
+-- Real Supabase projects grant these by default (any RLS policy or
+-- trigger that calls auth.uid() directly, not through a SECURITY DEFINER
+-- wrapper, depends on it). Missing this in the stub was a latent gap that
+-- happened to go uncaught until a non-definer trigger exercised it — see
+-- the note in 0009's log_activity() trigger.
+grant usage on schema auth to anon, authenticated, service_role;
+grant execute on function auth.uid() to anon, authenticated, service_role;

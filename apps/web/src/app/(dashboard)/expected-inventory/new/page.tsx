@@ -4,12 +4,14 @@ import { useEffect, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
+import { useAuth } from "@/lib/AuthProvider";
 import { Button, Card, ErrorBanner, Field, Input, PageHeader } from "@/components/ui";
 import type { Project, Warehouse } from "@/lib/database.types";
 
 // docs/product/SCREENS.md #11 Create/Edit Expected Inventory Record.
 export default function NewExpectedInventoryPage() {
   const router = useRouter();
+  const { membership } = useAuth();
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [form, setForm] = useState({
@@ -56,14 +58,6 @@ export default function NewExpectedInventoryPage() {
     e.preventDefault();
     setError(null);
     setSubmitting(true);
-
-    const { data: membership } = await supabase
-      .from("memberships")
-      .select("org_id")
-      .eq("status", "active")
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .single();
 
     const { error: insertError } = await supabase.from("expected_inventory_records").insert({
       org_id: membership?.org_id,

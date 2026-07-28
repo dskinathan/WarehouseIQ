@@ -27,7 +27,9 @@ against the product bible, it doesn't belong in V1.
 
 ### `organizations`
 Why: the tenant boundary. Every other table's isolation traces back to this.
-`id, name, slug (unique), created_at, archived_at null`
+`id, name, slug (unique), default_timezone (pre-fills new warehouses;
+added in the pre-M2 review to replace a Settings field that previously
+just displayed the first warehouse's timezone), created_at, archived_at null`
 
 ### `profiles`
 Why: extends Supabase `auth.users` with fields not tied to any one
@@ -281,6 +283,35 @@ our own infrastructure) is real additional value for a compliance-focused
 enterprise customer, but that's a V4 conversation once one is asking for
 it — the chain itself has to exist from day one, because you can't
 retroactively hash-chain history that already has gaps.
+
+---
+
+## 6b. Composite Org-Scoped Foreign Keys — added in the pre-M2 review
+
+A real gap found reviewing M1, not a style nitpick: every RLS insert/update
+policy checked a row's *own* `org_id`, but never checked that its *other*
+foreign keys (`warehouse_id`, `project_id`, etc.) belonged to that same
+org. Nothing stopped a client from setting `org_id` to their own
+organization while pointing `warehouse_id` at a different tenant's
+warehouse. Fixed with the standard Postgres multi-tenant pattern: give each
+parent table a `unique (id, org_id)` constraint, then have every child
+table's foreign key reference `(child_fk, org_id)` against it instead of
+just `child_fk`. A cross-org reference now fails at the constraint level —
+`warehouses`, `projects`, `locations`, `expected_inventory_records`,
+`expected_serial_numbers`, `csv_imports`, and `csv_import_rows` all carry
+this. Applied to every M2+ table (`pallets` and everything referencing it)
+from its very first migration, rather than retrofitted later.
+
+## 6c. Automatic Activity Logging — added in the pre-M2 review
+
+`activity_log` existed since M0 but nothing wrote to it during M1 —
+creating a warehouse, project, location, or Expected Inventory record left
+no audit trail, undercutting the product's own pitch. Fixed with a
+generic `log_activity()` trigger (keyed off `TG_TABLE_NAME`/`NEW`/`OLD`, so
+it works unmodified on any table with an `org_id` and `id` column) attached
+to `warehouses`, `projects`, `locations`, and `expected_inventory_records`
+for `INSERT`/`UPDATE`. A per-form call to log an action is easy to forget;
+a trigger isn't.
 
 ---
 

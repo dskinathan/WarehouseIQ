@@ -2,6 +2,7 @@
 
 import { useEffect, useState, type FormEvent } from "react";
 import { supabase } from "@/lib/supabaseClient";
+import { useAuth } from "@/lib/AuthProvider";
 import { Badge, Button, Card, EmptyState, ErrorBanner, Field, Input, PageHeader } from "@/components/ui";
 import type { Project, ProjectStatus } from "@/lib/database.types";
 
@@ -11,15 +12,20 @@ const STATUS_TONE: Record<ProjectStatus, "good" | "neutral"> = {
   archived: "neutral",
 };
 
+const STATUSES: ProjectStatus[] = ["active", "completed", "archived"];
+
+type FormState = { name: string; code: string; clientName: string; status: ProjectStatus };
+const emptyForm: FormState = { name: "", code: "", clientName: "", status: "active" };
+
 // docs/product/SCREENS.md #6 Project Management. `code` is the single
 // canonical "project number" — see docs/database/DATABASE.md §2 design
 // note; Expected Inventory references project_id, never a duplicated code.
 export default function ProjectsPage() {
+  const { membership } = useAuth();
   const [projects, setProjects] = useState<Project[] | null>(null);
   const [showForm, setShowForm] = useState(false);
-  const [name, setName] = useState("");
-  const [code, setCode] = useState("");
-  const [clientName, setClientName] = useState("");
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [form, setForm] = useState<FormState>(emptyForm);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -36,38 +42,42 @@ export default function ProjectsPage() {
     load();
   }, []);
 
-  async function handleCreate(e: FormEvent) {
+  function startCreate() {
+    setEditingId(null);
+    setForm(emptyForm);
+    setShowForm(true);
+  }
+
+  function startEdit(p: Project) {
+    setEditingId(p.id);
+    setForm({ name: p.name, code: p.code, clientName: p.client_name ?? "", status: p.status });
+    setShowForm(true);
+  }
+
+  async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
     setSubmitting(true);
-    const { data: membership } = await supabase
-      .from("memberships")
-      .select("org_id")
-      .eq("status", "active")
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .single();
 
-    const { error: insertError } = await supabase.from("projects").insert({
-      org_id: membership?.org_id,
-      name,
-      code,
-      client_name: clientName || null,
-    });
+    const payload = {
+      name: form.name,
+      code: form.code,
+      client_name: form.clientName || null,
+      status: form.status,
+    };
+    const { error: writeError } = editingId
+      ? await supabase.from("projects").update(payload).eq("id", editingId)
+      : await supabase.from("projects").insert({ org_id: membership?.org_id, ...payload });
 
     setSubmitting(false);
-    if (insertError) {
+    if (writeError) {
       setError(
-        insertError.code === "23505"
-          ? `A project with code "${code}" already exists.`
-          : insertError.message
+        writeError.code === "23505" ? `A project with code "${form.code}" already exists.` : writeError.message
       );
       return;
     }
-    setName("");
-    setCode("");
-    setClientName("");
     setShowForm(false);
+    setEditingId(null);
     load();
   }
 
@@ -75,29 +85,50 @@ export default function ProjectsPage() {
     <div>
       <PageHeader
         title="Projects"
-        action={<Button onClick={() => setShowForm((v) => !v)}>{showForm ? "Cancel" : "+ New"}</Button>}
+        action={<Button onClick={() => (showForm ? setShowForm(false) : startCreate())}>{showForm ? "Cancel" : "+ New"}</Button>}
       />
 
       {showForm && (
         <Card className="mb-6">
-          <form className="grid grid-cols-1 gap-4 sm:grid-cols-3" onSubmit={handleCreate}>
+          <form className="grid grid-cols-1 gap-4 sm:grid-cols-4" onSubmit={handleSubmit}>
             <Field label="Project code">
-              <Input required value={code} onChange={(e) => setCode(e.target.value)} placeholder="P-101" />
+              <Input
+                required
+                value={form.code}
+                onChange={(e) => setForm((f) => ({ ...f, code: e.target.value }))}
+                placeholder="P-101"
+              />
             </Field>
             <Field label="Name">
-              <Input required value={name} onChange={(e) => setName(e.target.value)} />
+              <Input required value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} />
             </Field>
             <Field label="Client (optional)">
-              <Input value={clientName} onChange={(e) => setClientName(e.target.value)} />
+              <Input
+                value={form.clientName}
+                onChange={(e) => setForm((f) => ({ ...f, clientName: e.target.value }))}
+              />
+            </Field>
+            <Field label="Status">
+              <select
+                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-900"
+                value={form.status}
+                onChange={(e) => setForm((f) => ({ ...f, status: e.target.value as ProjectStatus }))}
+              >
+                {STATUSES.map((s) => (
+                  <option key={s} value={s}>
+                    {s}
+                  </option>
+                ))}
+              </select>
             </Field>
             {error && (
-              <div className="sm:col-span-3">
+              <div className="sm:col-span-4">
                 <ErrorBanner message={error} />
               </div>
             )}
-            <div className="sm:col-span-3">
+            <div className="sm:col-span-4">
               <Button type="submit" disabled={submitting}>
-                {submitting ? "Saving..." : "Save"}
+                {submitting ? "Saving..." : editingId ? "Save Changes" : "Save"}
               </Button>
             </div>
           </form>
@@ -117,6 +148,7 @@ export default function ProjectsPage() {
                 <th className="px-4 py-2 font-medium">Name</th>
                 <th className="px-4 py-2 font-medium">Client</th>
                 <th className="px-4 py-2 font-medium">Status</th>
+                <th className="px-4 py-2 font-medium"></th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200 dark:divide-gray-800">
@@ -127,6 +159,11 @@ export default function ProjectsPage() {
                   <td className="px-4 py-2 text-gray-500">{p.client_name ?? "—"}</td>
                   <td className="px-4 py-2">
                     <Badge tone={STATUS_TONE[p.status]}>{p.status}</Badge>
+                  </td>
+                  <td className="px-4 py-2 text-right">
+                    <Button variant="secondary" onClick={() => startEdit(p)}>
+                      Edit
+                    </Button>
                   </td>
                 </tr>
               ))}

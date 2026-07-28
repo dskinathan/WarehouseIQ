@@ -339,6 +339,12 @@ detail/timeline/lifecycle → **M4** exceptions queue/activity log/warehouse
 dashboard/reports → **M5** demo polish. Full V1–V5 milestone rationale:
 `/docs/roadmap/ROADMAP.md`.
 
+**M0-M2 are complete.** The current milestone is not a build milestone at
+all — it's validating the system end to end against a real Supabase
+project and a real warehouse before any further feature work. See
+`/docs/operations/TEST_PLAN.md` (the exact test sequence) and
+`/docs/operations/DEPLOYMENT.md` (dev/staging/production strategy).
+
 ## 22. Business Model
 
 V1 is a design-partner/pilot model: priced per warehouse or per active user

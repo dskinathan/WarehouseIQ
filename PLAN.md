@@ -1,26 +1,42 @@
 # WarehouseIQ — V1 Architecture & Delivery Plan
 
-**Status:** Draft for approval — no application code has been written yet.
-**Author:** Acting CTO (Claude)
-**Scope:** MVP suitable for customer/investor demos. Not the final enterprise product.
+**Status:** Documentation complete, approved architecture, awaiting go-ahead
+to begin M0. No application code has been written yet.
+**Scope:** MVP suitable for customer/investor demos. Not the final
+enterprise product.
+
+This file is the index and the architecture-level summary. The full product
+and technical specification lives across five companion documents — read
+them in this order:
+
+1. **PRODUCT.md** — mission, founder story, personas, business model. The
+   document every other decision must trace back to.
+2. **DATABASE.md** — every table, relationship, RLS rule, and why it exists.
+3. **SCREENS.md** — every screen, wireframe, and interaction, mobile and web.
+4. **API.md** — every RPC function and edge function, inputs/outputs/auth.
+5. **ROADMAP.md** — V1 through V5 and why features land where they do.
+6. **DESIGN.md** — the visual/interaction system both apps share.
 
 ---
 
 ## 1. What WarehouseIQ Actually Is
 
-WarehouseIQ is not a WMS. A WMS tells you what *should* be in the warehouse.
-WarehouseIQ tells you whether *reality matches the record* — it's a verification
-and trust layer that sits on top of (or alongside) however inventory is
-currently tracked. Every feature decision below is filtered through that lens:
-the product's credibility depends entirely on the audit trail being complete,
-tamper-evident, and never lossy. That constraint drives more of the
-architecture than the AI does.
+WarehouseIQ is not a WMS, and it does not replace one. A WMS/ERP (SAP,
+Oracle, NetSuite, Dynamics) or a spreadsheet (Excel, Smartsheet) tells you
+what *should* be in the warehouse. WarehouseIQ is the independent
+verification layer that confirms *reality matches that record* — it sits
+alongside whatever system a customer already runs, not in place of it. See
+PRODUCT.md §4 for the full positioning.
+
+Every feature decision is filtered through that lens: the product's
+credibility depends entirely on (a) having a real "expected" record to
+verify against, and (b) an audit trail that is complete, tamper-evident, and
+never lossy. Those two constraints drive more of the architecture than the
+AI does.
 
 ---
 
 ## 2. System Overview
-
-Two clients, one backend, one AI extraction step in the middle.
 
 ```mermaid
 flowchart LR
@@ -28,24 +44,25 @@ flowchart LR
         A1[Login]
         A2[Scan Location QR]
         A3[Photograph Pallet]
-        A4[Review AI Result]
+        A4[Review AI Result vs Expected Inventory]
         A5[Confirm / Move / Search]
     end
 
     subgraph Web["Manager Dashboard (Next.js)"]
         B1[Warehouses / Projects / Locations]
         B2[QR Code Generation]
-        B3[Inventory Search & Pallet View]
-        B4[Activity Log / History]
-        B5[Warehouse KPI Dashboard]
+        B3[Expected Inventory - manual + CSV import]
+        B4[Exceptions & Approval Queue]
+        B5[Activity Log / Reports]
     end
 
     subgraph Backend["Supabase"]
-        C1[(Postgres + RLS)]
+        C1[(Postgres + RLS, multi-tenant)]
         C2[Auth]
         C3[Storage - pallet photos]
-        C4[Edge Function: extract-pallet]
-        C5[Edge Function: validate-movement]
+        C4[Edge Fn: extract-pallet]
+        C5[RPC: confirm_pallet_receipt]
+        C6[RPC: move_pallet / decide_approval]
     end
 
     D[Claude Vision API]
@@ -55,7 +72,9 @@ flowchart LR
     D --> C4
     C4 --> A4
     A5 --> C5
+    A5 --> C6
     C5 --> C1
+    B3 --> C1
     Mobile <--> C2
     Web <--> C2
     Web <--> C1
@@ -63,12 +82,15 @@ flowchart LR
     Web --> C3
 ```
 
-Key architectural decision: **the mobile app never talks to the AI vision
-provider directly.** The photo goes to a Supabase Edge Function, which calls
-Claude, validates the result against business rules (duplicate IDs, project
-mismatch, confidence threshold), and only then returns it to the app for
-human confirmation. This keeps API keys server-side and gives us one place to
-enforce the safety rules regardless of client.
+Two architectural decisions carry the most weight:
+
+1. **The mobile app never talks to the AI vision provider directly** — the
+   photo goes to a Supabase Edge Function, which calls Claude and returns
+   structured data to the app for human review. API keys stay server-side.
+2. **Every receiving decision is matched against an Expected Inventory
+   Record**, not just validated against the AI's own output. Without this,
+   "verify physical vs. digital" has nothing external to check against —
+   see DATABASE.md §3 and API.md §`rpc/confirm_pallet_receipt`.
 
 ---
 
@@ -76,118 +98,96 @@ enforce the safety rules regardless of client.
 
 | Layer | Choice | Why |
 |---|---|---|
-| Worker mobile app | **React Native + Expo, TypeScript** | Matches your instinct. Expo gets camera + QR scanning + OTA updates + TestFlight/internal APK distribution working in days, not weeks — important when the deliverable is a demo, not an app-store launch. |
-| Manager dashboard | **Next.js + TypeScript** | Server-rendered, deploys to Vercel with zero DevOps, and shares the TypeScript type layer with the mobile app (one language across the whole stack — small team, no context-switching tax). |
-| UI kit | **Tailwind CSS + shadcn/ui** | Gets "modern, clean, minimal, enterprise" for free. It's unstyled-by-default primitives, not a themed component library fighting you, so it won't look like a generic template in front of investors. |
-| Backend | **Supabase (Postgres, Auth, Storage, Edge Functions, RLS)** | Matches your instinct, and it's the right call for this specific product: Postgres gives us real relational integrity for warehouses → locations → pallets → movements; Row-Level Security lets us enforce "workers can insert, nobody can delete" *at the database layer*, not just in app code, which matters a lot for an audit-trail product being pitched on trustworthiness. Auto-generated APIs remove backend boilerplate we don't need to hand-write for an MVP. |
-| AI extraction | **Claude Vision (Sonnet), server-side via Edge Function** | The product's core value is *structured, confident extraction* from a messy pallet label photo — Pallet ID, PO, Manufacturer, Quantity, Product, Serial Numbers — as JSON, with a confidence signal per field. That's a vision-LLM task, not classical OCR: Tesseract-style OCR gives you raw text, not structured fields, and falls over on varied label layouts, handwriting, and multi-line serial lists. We ask Claude for strict JSON against a schema and a confidence score; traditional OCR becomes unnecessary. OpenAI Vision is a viable swap-in if we ever need a second model for comparison, but no reason to integrate both for V1. |
-| QR codes | **Server-generated (`qrcode` lib) in an Edge Function, printable sheet in the dashboard** | Each location gets a QR encoding a stable location UUID. No third-party QR service needed, no per-code cost. |
-| Hosting | **Vercel (dashboard), Supabase Cloud (backend), Expo EAS (mobile builds)** | All three have generous free/low tiers, zero servers to manage, and get us to "shippable demo" without a DevOps hire. |
+| Worker mobile app | **React Native + Expo, TypeScript** | Camera + QR scanning + OTA updates + TestFlight/internal APK distribution working in days, not weeks. |
+| Manager dashboard | **Next.js + TypeScript** | Deploys to Vercel with zero DevOps; shares the TypeScript type layer with the mobile app. |
+| UI kit | **Tailwind CSS + shadcn/ui** | "Modern, clean, minimal, enterprise" without fighting a themed component library. |
+| Backend | **Supabase (Postgres, Auth, Storage, Edge Functions, RLS)** | Real relational integrity for the org → warehouse → location → pallet → movement chain; RLS enforces multi-tenant isolation and "workers insert, nobody deletes" *at the database layer*. |
+| AI extraction | **Claude Vision, server-side via Edge Function** | Structured JSON extraction with per-field confidence — a vision-LLM task, not classical OCR, which can't reliably produce multi-field structured output across varied label layouts. |
+| QR codes | **Server-generated (`qrcode` lib), printable sheet in the dashboard** | Each location gets a QR encoding a stable UUID; no third-party QR service or per-code cost. |
+| Hosting | **Vercel (dashboard), Supabase Cloud (backend), Expo EAS (mobile builds)** | Zero servers to manage, gets us to a shippable demo without a DevOps hire. |
 
 **Explicitly not doing for V1:** custom OCR model training, offline-first
-mobile sync, multi-tenant billing, native iOS/Android (Swift/Kotlin) apps,
-Kubernetes/self-hosted infra. All of these are legitimate *v2+* conversations
-once the concept is validated with real customers — building them now would
+mobile sync, native iOS/Android (Swift/Kotlin) apps, real ERP/WMS
+integrations (SAP/Oracle/NetSuite/Dynamics), Kubernetes/self-hosted infra.
+All legitimate V2+ conversations (see ROADMAP.md) — building them now would
 be over-engineering an MVP.
 
 ---
 
-## 4. Data Model (core entities)
+## 4. Data Model — Summary
 
-Deliberately relational and boring — this is not a place to get clever.
+Full detail, every column, every RLS rule: **DATABASE.md**. Entity groups:
 
-- `organizations` *(optional in V1 if we're single-tenant for the pilot customer; flagged as a decision point below)*
-- `users` — role: `worker` | `manager` (Supabase Auth + a `profiles` table for role)
-- `warehouses`
-- `projects`
-- `locations` — belongs to a warehouse; has a unique QR-encoded id
-- `pallets` — Pallet ID, Project, PO, Manufacturer, Quantity, Product, Serial Numbers (array), AI confidence per field, current `location_id`, current `status`
-- `pallet_photos` — every photo ever taken of a pallet, linked to a movement
-- `pallet_movements` — **append-only ledger**: pallet_id, employee_id, timestamp, previous_location_id, new_location_id, photo_id, AI-extraction snapshot at time of move
-- `activity_log` — every create/confirm/move/flag event, for the manager-facing audit view
-
-**Immutability rule, enforced structurally, not by convention:** `pallet_movements`
-and `activity_log` grant `INSERT` only at the Postgres role level — no `UPDATE`,
-no `DELETE`, even for admins, even from the Supabase dashboard. "Nothing can
-ever be deleted" needs to be true even if someone makes a mistake in the app
-code later, so it belongs in the database's permission grants, not just in
-application logic.
+- **Tenancy:** `organizations`, `profiles` (role: worker | manager) — every
+  tenant table carries `org_id`; RLS enforces org isolation on every table.
+- **Warehouse structure:** `warehouses`, `projects`, `locations`.
+- **Expected Inventory (the digital record):** `expected_inventory_records`,
+  `expected_serial_numbers`, `csv_imports`, `csv_import_rows` — populated by
+  manual entry or CSV today, and by a future ERP sync (V2) into the exact
+  same table, never a parallel system.
+- **Pallets:** `pallets`, `serial_numbers` (own child table, not an array
+  column — scales to thousands of serials per pallet), `pallet_photos`.
+- **The trust ledger:** `pallet_movements` and `activity_log` (append-only,
+  `INSERT`-only grants — no `UPDATE`/`DELETE` for any role, including
+  managers), `pallet_exceptions`, `approval_requests`.
 
 ---
 
 ## 5. Safety Features — how each one actually gets implemented
 
+Full detail with exact exception types: DATABASE.md §5, API.md
+`rpc/confirm_pallet_receipt`. Summary:
+
 | Requirement | Mechanism |
 |---|---|
-| Duplicate pallet ID | Unique constraint on `pallets.pallet_id` scoped to org/warehouse; Edge Function checks before insert and surfaces a blocking warning, not a silent failure. |
-| Wrong project assignment | Cross-check AI-extracted project against the project assigned to the target location; mismatch = warning requiring explicit manager-visible override, logged as a flagged event. |
-| Quantity mismatch | Compare AI-extracted quantity against expected PO quantity (if known); flag variance beyond a threshold. |
-| Low AI confidence | Claude returns a per-field confidence score; below threshold, that field is highlighted for mandatory manual correction before Confirm is enabled. |
-| Movement confirmation | Confirm button is disabled until all flags are acknowledged; every confirm writes one immutable `pallet_movements` row with employee, timestamp, photo, previous/new location. |
+| Duplicate pallet ID | Unique check on `(org_id, pallet_label_id)` among active pallets before insert. |
+| Duplicate / missing serials | `serial_numbers` unique constraint per org; expected-serial matching against `expected_serial_numbers`. |
+| Wrong project / manufacturer / product / unknown PO / over-receipt | Cross-checked against the matched `expected_inventory_records` row inside `rpc/confirm_pallet_receipt`. |
+| Quantity mismatch | Compared against `expected_quantity`/remaining balance on the expected record. |
+| Low AI confidence | Per-field confidence from Claude; below threshold, field is forced open for manual correction before Confirm is enabled. |
+| Serious exceptions (unknown PO, duplicate pallet/serial, over-receipt) | Blocks auto-acceptance — creates an `approval_requests` row; a manager must approve or reject before the pallet counts as received. |
+| Movement confirmation | Every move/receive writes one immutable ledger row: employee, timestamp, photo, previous/new location. |
 
 ---
 
 ## 6. Milestones
 
-Each milestone ships something demoable end-to-end. We build **one at a
-time**, in order, and I'll show you working software before moving to the
-next.
+Summary only — full V1–V5 rationale in **ROADMAP.md**. We build **one
+milestone at a time** and stop for review after each.
 
-**M0 — Foundations (no visible UI yet)**
-Supabase project, schema + RLS policies, auth with worker/manager roles, repo
-scaffolding for both apps, CI lint/typecheck. Acceptance: a manager and a
-worker account can log in against a real database with role-based access
-already enforced.
-
-**M1 — Manager Dashboard: setup tools**
-Create Warehouses, Projects, Locations. Generate & print/export QR codes.
-Acceptance: a manager can fully configure a warehouse and print scannable
-location labels.
-
-**M2 — Worker App: capture & confirm (the core AI loop)**
-Login, scan a location QR, photograph a pallet, AI extraction via the Edge
-Function, review/edit screen with confidence highlighting, Confirm → pallet
-created and assigned to that location. Acceptance: a worker can onboard a
-real pallet end-to-end and it shows up correctly in the database.
-
-**M3 — Movement & search**
-Move inventory (scan new location, confirm, ledger entry written), search
-inventory (worker + manager), pallet detail view showing full history.
-Acceptance: a pallet can be moved and its complete location history is
-visible and correct.
-
-**M4 — Manager visibility & safety features**
-Activity Log, Inventory History, Warehouse Dashboard (KPIs/overview),
-duplicate/mismatch/low-confidence detection surfaced in both apps.
-Acceptance: the safety checks in section 5 all demonstrably fire, and a
-manager can see everything that happened, by whom, and when.
-
-**M5 — Demo polish**
-Empty states, error handling, seeded demo data, deployment hardening for
-showing to customers/investors.
+- **M0** — Supabase schema (multi-tenant), RLS, auth roles, repo
+  scaffolding. No UI yet. *Acceptance: a manager and worker in two
+  different orgs can both log in, and neither can see the other's data.*
+- **M1** — Manager Dashboard setup tools: Warehouses, Projects, Locations,
+  QR generation, Expected Inventory (manual entry + CSV import).
+- **M2** — Worker App core loop: scan → photograph → AI extraction →
+  review against Expected Inventory → confirm (including the
+  approval-required path for blocking exceptions).
+- **M3** — Move, search, pallet detail, immutable timeline.
+- **M4** — Exceptions & Approval Queue, Activity Log, Warehouse Dashboard,
+  Reports.
+- **M5** — Demo polish: empty states, error handling, seed data, deployment
+  hardening.
 
 ---
 
-## 7. Open Decisions Before We Start Building
+## 7. Decisions Locked In (superseding the original open questions)
 
-1. **Single-tenant vs. multi-org from day one?** If this MVP is for one pilot
-   customer, we skip the `organizations` table and multi-tenant RLS
-   complexity entirely and add it later. If you already know you'll be
-   demoing to multiple prospective customers who each need isolated data,
-   we should build the org boundary into the schema now — it's cheap now
-   and expensive to retrofit. **Which is it?**
-2. **Serial number volume** — are we talking a handful of serials per pallet
-   (fits fine in a JSON/array column) or potentially hundreds (would want a
-   child table instead)? Affects the `pallets` schema in M0.
-3. Any existing inventory system this needs to reconcile against in V1, or
-   is WarehouseIQ the sole system of record for this MVP?
+1. **Multi-tenant from day one.** Every record belongs to an organization;
+   RLS enforces isolation on every table.
+2. **Serial numbers are a child table**, not an array column.
+3. **WarehouseIQ does not replace the customer's WMS/ERP in V1.** Expected
+   Inventory Records are the interim digital record, explicitly designed so
+   V2 ERP integrations populate the same table without a schema change.
+4. **One user belongs to exactly one organization in V1** — flagged as a
+   real assumption to revisit if a customer needs cross-org contractor
+   access (see DATABASE.md §7).
 
 ---
 
 ## 8. Next Step
 
-Waiting for your go-ahead on this plan (and answers to the three questions
-above, if you have a strong preference — otherwise I'll make the
-single-tenant / array-column / no-external-reconciliation assumption and we
-can revisit later). Once approved, we build **M0 only**, and I'll stop there
-for review before touching M1.
+Documentation is complete. Waiting on your go-ahead (see the accompanying
+chat message for the CTO-level review: weak assumptions, features to
+consider cutting from V1, and edge cases worth deciding on before M0).
+Once approved, we build **M0 only** and stop for review before touching M1.

@@ -8,6 +8,16 @@ Screens are grouped: **Shared**, **Manager Dashboard (web)**, **Worker App
 (mobile)**. Several screens (Search, Pallet Details) are used by both roles
 with permission differences noted inline.
 
+**Changes from the final architecture review:** the AI no longer guesses
+"Project" (derived from the matched PO instead — see AI Review Screen);
+worker-facing confidence is shown as a simple indicator, not a raw
+percentage; a "Log as Untracked" path was added to the receiving flow; a
+new lifecycle action (Ship / Install / Consume / Scrap) was added to Pallet
+Details; the standalone CSV Import History screen was cut (folded into
+Expected Inventory List); Settings' Notification Preferences control was
+removed (no backing feature until V2 push notifications); Warehouse
+Dashboard's occupancy view was simplified from a heatmap to a plain list.
+
 ---
 
 # Shared
@@ -125,10 +135,9 @@ with permission differences noted inline.
 +--------------------------------------------------+
 |  Pallets: {n}   Locations: {n}   Exceptions: {n}   |
 |                                                    |
-|  Occupancy by Location                             |
-|  +--------------------------------------------+   |
-|  | {location grid/heat list}                   |  |
-|  +--------------------------------------------+   |
+|  Occupancy                                         |
+|  {Location}        {Occupied/Empty}  {Pallet ID}   |
+|  {Location}        {Occupied/Empty}  {Pallet ID}   |
 |                                                    |
 |  <Projects in this warehouse>                      |
 |  <Locations>   <Expected Inventory>                |
@@ -138,10 +147,14 @@ with permission differences noted inline.
   scoped to this warehouse.
 - **Inputs:** date-range filter for activity.
 - **Navigation:** from Manager Dashboard warehouse card; back to home.
-- **Features:** occupancy view answers "where is space free/full" at a
-  glance.
+- **Features:** occupancy answers "where is space free/full" at a glance.
+  **Simplified from a heatmap to a plain list in the final architecture
+  review** — a visual heatmap is real engineering effort for a V1 pilot,
+  and a sortable list answers the same question with far less build cost;
+  revisit as a heatmap once there's enough scale/dwell-time data to make
+  one worth looking at.
 - **Data displayed:** pallet count, location count, open exceptions,
-  occupancy.
+  per-location occupancy.
 - **Error states:** warehouse archived (read-only banner).
 - **Empty states:** no locations yet → CTA to Warehouse Setup.
 - **Future improvements:** heatmap by dwell time, capacity forecasting.
@@ -406,16 +419,23 @@ Step 3: Review
 Step 4: Done
 +-----------------------------+
 |  Imported 48 records.           |
-|  <View Import History>          |
+|  <Back to Expected Inventory>   |
 +-----------------------------+
 ```
 - **Buttons:** Next, Validate, Fix (inline row edit), Import Valid Rows,
   Cancel (at any step, nothing commits until the final step).
 - **Inputs:** file upload, column mapping dropdowns, inline row corrections.
 - **Navigation:** from Expected Inventory List; final step → back to List.
-- **Features:** column mapping remembered per org for next import; partial
-  commit (import the valid rows now, fix and re-import the rest later);
-  every past import remains visible in history with its raw rows.
+- **Features:** partial commit (import the valid rows now, fix and
+  re-import the rest later). **Cut in the final architecture review:** a
+  standalone Import History screen and per-org remembered column mapping —
+  both are real V1 UI effort for a pilot that will run a handful of
+  imports total. The underlying data (every raw row, every import) is
+  still kept forever per DATABASE.md; each Expected Inventory record simply
+  shows its originating import inline (source + timestamp) rather than
+  needing a dedicated browsing screen. Both cuts are UI-only, not
+  data-model changes, and cheap to add back once import volume justifies
+  the screen.
 - **Data displayed:** row counts, per-row errors, preview table.
 - **Error states:** unparseable file; no rows matched required columns.
 - **Empty states:** n/a.
@@ -432,25 +452,39 @@ Step 4: Done
 +--------------------------------------------------+
 | Exceptions & Approvals        Pending: {3}          |
 +--------------------------------------------------+
-| Type            Pallet    Requested By   Requested   |
+| Needs Approval (blocking)                             |
 | Unknown PO      {P-9981}  {Marcus}       2h ago       |
 |   PO-9999 not found in Expected Inventory              |
 |   [ View Photo ]  [ Approve ]  [ Reject ]              |
 | Over-Receipt    {P-9982}  {Marcus}       1h ago        |
 |   Would exceed expected 50 -> 54                        |
 |   [ View Photo ]  [ Approve ]  [ Reject ]              |
+|                                                          |
+| For Review (not blocking anything)                       |
+| Untracked Item  {P-9990}  {Marcus}       30m ago         |
+|   Logged as untracked -- no matching PO                 |
+|   [ View Photo ]  [ Acknowledge ]  [ Link to a PO ]      |
 +--------------------------------------------------+
 ```
-- **Buttons:** Approve, Reject (both require a note on reject), View Photo,
-  filter by type/warehouse.
+- **Buttons:** Approve, Reject (both require a note on reject), Acknowledge
+  / Link to a PO (for review-only items), View Photo, filter by
+  type/warehouse.
 - **Inputs:** decision notes.
 - **Navigation:** from Manager Dashboard badge; links to Pallet Details and
   Expected Inventory Detail.
-- **Features:** approve finalizes the pending pallet/movement and updates
-  Expected Inventory counters; reject retains the record as `rejected`,
-  never deletes it.
-- **Data displayed:** exception type, pallet, photo, requester, elapsed
-  time, related expected-record context.
+- **Features:** the queue is split into two sections, added in this
+  review — **Needs Approval** (`blocking` exceptions: unknown PO,
+  duplicate pallet/serial, over-receipt) actually gates the pallet and
+  must be approved or rejected before it counts as received; **For
+  Review** (`warning` exceptions, including Log-as-Untracked items) never
+  blocked anything and is purely informational — a manager can acknowledge
+  it or retroactively link it to a PO if one turns out to exist, but there's
+  no urgency-by-design here, which is the point: it keeps the blocking
+  queue meaningful instead of drowning it in routine no-PO items. Approve
+  finalizes the pending pallet/movement and updates Expected Inventory
+  counters; reject retains the record as `rejected`, never deletes it.
+- **Data displayed:** exception type, severity, pallet, photo, requester,
+  elapsed time, related expected-record context.
 - **Error states:** decision race (two managers act at once) — second
   decision is rejected with "already decided by {name}."
 - **Empty states:** "No open exceptions" (a good state, shown positively).
@@ -558,20 +592,23 @@ Step 4: Done
 | Organization Name (text)       |
 | Default Timezone [dropdown]    |
 | AI Confidence Threshold (slider)|
-| Notification Preferences        |
 |      [ Save ]                  |
 +-----------------------------+
 ```
 - **Buttons:** Save.
-- **Inputs:** org name, timezone, confidence threshold, notification prefs.
+- **Inputs:** org name, timezone, confidence threshold.
 - **Navigation:** from dashboard nav.
 - **Features:** confidence threshold directly tunes when
   `low_ai_confidence` exceptions fire — a real lever, not decoration.
+  **Notification Preferences was removed in the final architecture
+  review** — V1 has no push-notification system for it to configure (that
+  lands in V2), and a setting with no backing feature is worse than no
+  setting at all. It returns to this screen when V2 notifications ship.
 - **Data displayed:** current org config.
 - **Error states:** invalid threshold range.
 - **Empty states:** n/a.
 - **Future improvements:** billing/plan management, branding, data export/
-  deletion for compliance.
+  deletion for compliance, notification preferences (V2).
 
 ---
 
@@ -678,35 +715,59 @@ Step 4: Done
 +--------------------------------------------------+
 |  Review Extracted Data          {photo thumbnail}  |
 +--------------------------------------------------+
-|  Pallet ID     (P-9981)                     [93%]  |
-|  Project       (P-101 - Solar Farm A)        [88%]  |
+|  Pallet ID     (P-9981)                        OK  |
 |  PO Number     (PO-9999)            !NOT FOUND!     |
-|  Manufacturer  (Acme)                        [95%]  |
-|  Product       (Inverter X)                  [90%]  |
-|  Quantity      (12)                          [61%]  <- low, highlighted
+|  Manufacturer  (Acme)                           OK  |
+|  Product       (Inverter X)                     OK  |
+|  Quantity      (12)              [Please double-    |
+|                                    check this]       |
 |  Serials       (SN001, SN002, ... +10)       [expand]|
+|  Project       Solar Farm A (P-101)   <- auto-filled |
+|                 from matched PO, not editable here   |
 |                                                      |
-|  ! Exception: Unknown PO — will require manager     |
-|    approval                                          |
+|  ! This PO wasn't found in Expected Inventory.       |
+|    [ Retry Match ]   [ Log as Untracked ]            |
 |                                                      |
 |      [ Retake Photo ]      [ Continue ]              |
 +--------------------------------------------------+
 ```
-- **Buttons:** Retake Photo, edit any field inline, Continue (→ Confirm).
+- **Buttons:** Retake Photo, edit any field inline, Retry Match (re-run the
+  PO lookup, e.g. after correcting a misread PO number), **Log as
+  Untracked** (new in the final architecture review), Continue (→ Confirm).
 - **Inputs:** editable text field per extracted value.
 - **Navigation:** → Confirm Inventory.
-- **Features:** per-field confidence badges; low-confidence fields are
-  visually forced open for manual correction — **Continue is disabled
-  until every field under the confidence threshold has been touched or
-  confirmed by the worker**; exceptions detected against the matched
-  Expected Inventory record are shown here, before confirmation, not
-  after.
-- **Data displayed:** every AI-extracted field, its confidence, and any
-  exception already detected via a preliminary match against Expected
-  Inventory.
-- **Error states:** no matching Expected Inventory record found at all
-  (surfaced as "Unknown PO," not a silent failure); AI returned nothing
-  usable (manual entry fallback for the whole pallet).
+- **Features, revised in the final architecture review:**
+  - **Project is not an AI-extracted field.** A manufacturer's label
+    doesn't print an internal project name, so asking the AI to guess one
+    produced an unreliable field with nothing real to check it against.
+    Project is shown read-only, auto-filled from whichever Expected
+    Inventory Record the PO number matched — it's information, not
+    something the worker corrects here.
+  - **No raw confidence percentages for workers.** A "93%" or "61%" badge
+    is a data-science artifact, not warehouse language. Fields the AI is
+    confident about show a plain OK; fields below the confidence threshold
+    show a plain "please double-check this" prompt and are forced open for
+    correction. The underlying numeric confidence score is still recorded
+    and is visible to managers on Pallet Details/Reports, where it's
+    actually useful for tuning the threshold.
+  - **Log as Untracked:** if no Expected Inventory Record matches the PO
+    (or there genuinely isn't one — an internal transfer, a spare part),
+    the worker can proceed immediately without waiting on a manager. The
+    pallet is still created and still fully traceable; it's flagged for a
+    manager to review asynchronously rather than blocking the worker. This
+    exists specifically so legitimate no-PO items don't flood the approval
+    queue and cause managers to rubber-stamp real exceptions out of
+    fatigue (see DATABASE.md §5).
+  - **Continue is disabled** until every low-confidence field has been
+    touched or confirmed, and until the unmatched-PO banner has been
+    either resolved (Retry Match succeeds) or explicitly dismissed via Log
+    as Untracked.
+- **Data displayed:** every AI-extracted field and its review state;
+  auto-filled project; any exception detected via a preliminary match
+  against Expected Inventory.
+- **Error states:** no matching Expected Inventory record found (routed to
+  Log as Untracked, not a silent failure or a hard block); AI returned
+  nothing usable (manual entry fallback for the whole pallet).
 - **Empty states:** n/a.
 - **Future improvements:** side-by-side photo zoom + field highlight (tap a
   field, see where on the photo it was read from).
@@ -725,6 +786,9 @@ Step 4: Done
 |                                 |
 |  ! Requires manager approval    |
 |    (Unknown PO)                 |
+|    -- or --                     |
+|  i Logged as Untracked --       |
+|    a manager will review this   |
 |                                 |
 |      [ Confirm ]                |
 +-----------------------------+
@@ -732,11 +796,17 @@ Step 4: Done
 - **Buttons:** Confirm (single action — everything else was decided on the
   Review screen).
 - **Inputs:** none.
-- **Navigation:** success → Receive Inventory home, with a clear "pending
-  manager approval" vs. "received" result state shown.
-- **Features:** calls `rpc/confirm_pallet_receipt`; if a blocking exception
-  exists, the confirmation still submits but the worker is told plainly
-  that it's now awaiting a manager, not silently accepted.
+- **Navigation:** success → Receive Inventory home, with a clear result
+  state: "received," "logged as untracked — a manager will review this,"
+  or "pending manager approval," never a bare generic success message.
+- **Features:** calls `rpc/confirm_pallet_receipt` with the client-generated
+  idempotency key from the Review screen, so a dropped connection and a
+  resubmit can't create a duplicate pallet. If a blocking exception exists,
+  the confirmation still submits but the worker is told plainly that it's
+  now awaiting a manager, not silently accepted. If Log as Untracked was
+  chosen, the worker is told the pallet is received and active immediately
+  — untracked review never blocks the worker, only informs them it's
+  visible to a manager.
 - **Data displayed:** summary of what's about to be recorded.
 - **Error states:** submission failure (retry, nothing partially written —
   the RPC is transactional).
@@ -761,13 +831,20 @@ Step 4: Done
 |  Acme - Battery Y - Qty 20      |
 +-----------------------------+
 ```
-- **Buttons:** filter chips (warehouse, project, status), row tap → detail.
+- **Buttons:** filter chips (warehouse, project, lifecycle status), row tap
+  → detail.
 - **Inputs:** search text, filters.
 - **Navigation:** → Pallet Details.
-- **Features:** works offline against last-synced cache in a future
-  version; V1 is online-only.
+- **Features:** defaults to "In Stock" pallets only, per the lifecycle
+  model added in this review — shipped/installed/consumed/scrapped pallets
+  are hidden unless a filter explicitly includes them, since "where is
+  this in my warehouse" shouldn't surface things that already left it.
+  V1 is online-only; a brief network blip during a search retries
+  automatically rather than failing outright (see PRODUCT.md's transient
+  connectivity tolerance) — full offline search against a synced cache is
+  V2.
 - **Data displayed:** pallet ID, location, manufacturer/product/qty,
-  exception badge if any.
+  lifecycle status, exception badge if any.
 - **Error states:** no connection.
 - **Empty states:** no results for query.
 - **Future improvements:** barcode/serial-number search, saved searches.
@@ -784,25 +861,68 @@ Step 4: Done
 | Project: P-101   PO: PO-9999   Status: Pending Appr.|
 | Manufacturer: Acme   Product: Inverter X   Qty: 12  |
 | Current Location: Aisle 3 / Bay 2                    |
+| Inventory Status: In Stock                            |
 | Serials: SN001 (received) SN002 (received) ...       |
 +--------------------------------------------------+
-| <Inventory Timeline>   [ Move ]                       |
+| <Inventory Timeline>   [ Move ]   [ Update Status v ] |
 +--------------------------------------------------+
 ```
-- **Buttons:** Move (→ Move Inventory), View Photo(s), (manager only)
-  Approve/Reject if pending, Void.
+- **Buttons:** Move (→ Move Inventory), Update Status (→ Update Pallet
+  Lifecycle — new in the final architecture review, see below), View
+  Photo(s), (manager only) Approve/Reject if pending, Void.
 - **Inputs:** none directly (edits go through explicit correction flows
   logged to `activity_log`).
-- **Navigation:** → Inventory Timeline, → Move Inventory, → Expected
-  Inventory Detail (via PO link).
+- **Navigation:** → Inventory Timeline, → Move Inventory, → Update Pallet
+  Lifecycle, → Expected Inventory Detail (via PO link).
 - **Features:** single source of truth for a pallet — every other screen
-  links here.
-- **Data displayed:** all pallet fields, current location, serials, photo,
-  linked expected record, status.
+  links here. "Inventory Status" (In Stock / Shipped / Installed /
+  Consumed / Scrapped) is shown prominently since it now determines
+  whether this pallet counts toward warehouse inventory at all.
+- **Data displayed:** all pallet fields, current location, lifecycle
+  status, serials, photo, linked expected record, receipt status.
 - **Error states:** pallet voided (banner, read-only).
 - **Empty states:** n/a (a pallet detail screen without a pallet doesn't
   exist).
 - **Future improvements:** QR code re-print for a pallet-specific label.
+
+## 26b. Update Pallet Lifecycle (Ship / Install / Consume / Scrap) — new screen, added in this review
+
+- **Purpose:** close the gap where inventory that physically left the
+  warehouse had no way to stop counting as "in stock" — a real limitation
+  the original V1 model didn't address, and one your own founder story
+  points at directly (project inventory eventually ships to a job site).
+- **Who uses it:** worker (day-to-day) and manager.
+- **Wireframe:**
+```
++-----------------------------+
+|  Update Status: P-9981         |
+|  Currently: In Stock            |
+|                                 |
+|  New Status: [ Shipped v ]      |
+|  Destination/Note (text)        |
+|  Reason (text, required if       |
+|          Scrapped)               |
+|  [ Attach Photo (optional) ]     |
+|                                  |
+|      [ Confirm Status Change ]  |
++-----------------------------+
+```
+- **Buttons:** Confirm Status Change.
+- **Inputs:** new status (Shipped/Installed/Consumed/Scrapped), destination
+  note, reason (required for Scrapped), optional photo.
+- **Navigation:** from Pallet Details; success → back to Pallet Details
+  showing the updated status.
+- **Features:** calls `rpc/record_lifecycle_event`; writes an immutable
+  `pallet_lifecycle_events` row; the pallet's location history is never
+  altered or cleared — only its inventory-count classification changes, so
+  "where was this last seen" is always still answerable.
+- **Data displayed:** current status, pallet identity.
+- **Error states:** pallet already in a terminal state (blocked — a
+  scrapped pallet can't later be marked Installed; if that happens in
+  reality, it's a new pallet/correction event, not an edit to this one).
+- **Empty states:** n/a.
+- **Future improvements:** bulk status update for multiple pallets shipping
+  together on one truck.
 
 ## 25. Move Inventory
 

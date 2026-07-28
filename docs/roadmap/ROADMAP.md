@@ -33,16 +33,29 @@ manually re-typing their PO list?
 - Direct ERP/WMS integrations (SAP, Oracle, NetSuite, Microsoft Dynamics)
   and Smartsheet sync, populating `expected_inventory_records` with
   `source = erp_integration` — no schema change from V1, per DATABASE.md
-  design.
-- Offline-first mobile: local queue of scans/photos, sync + conflict
-  resolution when connectivity returns (V1 warehouses may have dead zones).
+  design, including the multi-line-item PO key added in the final V1
+  architecture review.
+- **Full offline-first mobile:** V1 already tolerates brief connectivity
+  gaps (a local retry buffer for the current session); V2 is the real
+  multi-day offline queue with conflict resolution for warehouses that are
+  dead zones for hours or days, not just seconds.
+- **Org-switcher UI:** V1's `memberships` table already supports a user
+  belonging to multiple organizations; V2 adds the UI to switch between
+  them, for contractors/EPC staff working across multiple client sites.
 - Barcode/1D code support alongside QR (some existing location labels may
   already be barcoded).
 - Push notifications for managers on blocking exceptions (V1 requires them
   to check the queue manually).
 - Richer role model: distinguish org Admin (billing/users) from Manager
   (day-to-day) if pilot feedback shows that's needed.
-- Bulk operations (multi-pallet move, bulk approval).
+- Bulk operations (multi-pallet move, bulk approval, bulk lifecycle status
+  update for a truckload shipping out together).
+- Optional photo-based location verification (cross-checking EXIF GPS
+  against warehouse address) as an opt-in fraud signal — off by default in
+  V1 for privacy reasons (see DATABASE.md §4).
+- A reconciliation job to detect drift in Expected Inventory's denormalized
+  received-quantity counters, closing the one piece of accepted V1 debt
+  named in DATABASE.md §9.
 
 ## V3 — "Can the AI do more than read a label — can it help prevent
 problems, not just record them?"
@@ -71,6 +84,11 @@ compliance review and scale past a handful of design-partner customers?
 - Data residency options, SOC 2-aligned audit export.
 - Versioned public API + webhooks for partner/integrator ecosystem — a thin
   wrapper over the same RPC functions from `API.md`, not a rebuild.
+- **Cryptographic anchoring of the audit ledger:** V1 already hash-chains
+  every ledger row (DATABASE.md §6), which makes tampering detectable; V4
+  adds externally signing/publishing the chain heads once an actual
+  enterprise compliance review asks for it — building that before anyone's
+  asking would be effort spent on a requirement that doesn't exist yet.
 
 ## V5 — "Can verification happen without a human doing the scanning at
 all?"

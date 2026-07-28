@@ -49,6 +49,20 @@ look like the fewest possible things to look at.
 - Dashboard: consistent left nav + content area, no more than two levels
   of navigation depth to reach any screen in SCREENS.md.
 
+## 4b. Confidence & Status Language (added in the final architecture review)
+
+The AI Review Screen originally showed raw confidence percentages (e.g.
+"61%") to workers. That's data-science language, not warehouse language,
+and it was cut: the worker-facing app shows only a plain "OK" or "please
+double-check this" per field. The underlying numeric score is preserved in
+the database and shown to managers on Pallet Details/Reports, where it's
+actually actionable (tuning the confidence threshold in Settings). The same
+principle applies everywhere else a worker sees status: never a raw
+exception code (`unknown_po`, `over_receipt`) or enum value — always a
+plain-language sentence. Managers, by contrast, can and should see the
+precise technical detail (exact exception type, exact confidence number,
+exact PO line matched) since that's their job.
+
 ## 5. Components
 
 - **Buttons:** one primary (filled, accent color) per screen — if two

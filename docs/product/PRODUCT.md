@@ -119,33 +119,56 @@ day-to-day user in V1, but the Reports screen exists for him.
 2. **Set expectations** — Manager enters or imports what's expected to
    arrive (PO, manufacturer, product, quantity, serials if known).
 3. **Receive** — Worker scans a location, photographs a pallet, AI extracts
-   the pallet's data, WarehouseIQ matches it against an Expected Inventory
-   Record and surfaces any mismatch, worker confirms (or escalates to
-   manager approval if the mismatch is serious).
+   the pallet's data (PO, manufacturer, product, quantity, serials — not
+   project, which is derived automatically from the matched PO, not
+   guessed off a label), WarehouseIQ matches it against an Expected
+   Inventory Record and surfaces any mismatch, worker confirms — or, if
+   there's genuinely no matching PO, logs it as untracked for a manager to
+   review later without blocking the receive.
 4. **Move** — Worker scans source pallet + destination location, confirms;
    an immutable movement record is written.
-5. **Verify** — Manager reviews the activity log, open exceptions, and
+5. **Ship / Install / Consume / Scrap** — When a pallet leaves the
+   warehouse for good (shipped to a job site, installed, consumed, or
+   scrapped), the worker or manager records that terminal event so the
+   pallet stops counting as in-stock inventory — without erasing its
+   history.
+6. **Verify** — Manager reviews the activity log, open exceptions, and
    expected-vs-received status at any time, with full photo/who/when
    evidence behind every claim.
 
 ## 8. V1 Feature List
 
-- Multi-tenant organizations with isolated data (§DATABASE.md)
+- Multi-tenant organizations with isolated data, modeled as a
+  user↔organization membership so a person can belong to more than one
+  org without a future migration (§DATABASE.md)
 - Auth + two roles: Worker, Manager
 - Manager: Warehouses, Projects, Locations, QR generation
-- Manager: Expected Inventory (manual entry + CSV import)
+- Manager: Expected Inventory (manual entry + CSV import), keyed to
+  support multi-line-item POs from day one
 - Worker: scan location → photograph pallet → AI extraction → review →
-  confirm (with exception detection against Expected Inventory)
-- Worker: move inventory, search inventory, view pallet detail
-- Manager: activity log, inventory/pallet history, exception & approval
-  queue, warehouse dashboard, basic reports
-- Append-only movement and activity history; nothing is ever deleted
+  confirm, with exception detection against Expected Inventory and a
+  "Log as Untracked" path for legitimate no-PO items
+- Worker: move inventory, search inventory (defaults to in-stock only),
+  view pallet detail
+- Worker/Manager: record a pallet's terminal lifecycle event (Shipped /
+  Installed / Consumed / Scrapped) so it stops counting as in-stock
+- Manager: activity log, inventory/pallet history, an exceptions queue
+  split into blocking approvals vs. non-blocking review items, warehouse
+  dashboard, basic reports
+- Append-only, hash-chained movement/lifecycle/activity history — nothing
+  is ever deleted, and tampering is detectable even with elevated database
+  access (§DATABASE.md §6)
+- Transient local retry for photo/confirm actions so a brief connectivity
+  gap (common in steel-sided warehouses) doesn't lose a worker's action —
+  not full offline support, see ROADMAP.md V2
 
 ## 9. V2+ Roadmap (see ROADMAP.md for full detail)
 
 Direct ERP/WMS integrations (SAP, Oracle, NetSuite, Dynamics, Smartsheet)
-populating Expected Inventory automatically; offline-first mobile; barcode
-support; push notifications; richer role model; bulk operations.
+populating Expected Inventory automatically; full offline-first mobile
+with multi-day queueing and conflict resolution; barcode support; push
+notifications; an org-switcher UI (the membership model already supports
+it); richer role model; bulk operations.
 
 ## 10. Business Model
 
@@ -200,4 +223,8 @@ Modern, clean, minimal, enterprise-credible — but the real design test is
 whether a warehouse worker with gloves on and a phone in bright sunlight can
 use it one-handed without training. Every screen optimizes for the fewest
 taps and the least typing, because the worker's job is moving pallets, not
-running software. See `DESIGN.md` for the full system.
+running software. Confidence scores and other data-science artifacts are
+manager/reporting language, not worker language — the worker-facing app
+speaks in plain instructions ("please double-check this"), never raw
+percentages or internal exception codes. See `DESIGN.md` for the full
+system.

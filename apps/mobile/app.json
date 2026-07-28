@@ -1,0 +1,12 @@
+{
+  "expo": {
+    "name": "WarehouseIQ",
+    "slug": "warehouseiq-worker",
+    "version": "0.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "plugins": ["expo-camera", "expo-barcode-scanner"],
+    "ios": { "supportsTablet": false },
+    "android": {}
+  }
+}

@@ -1,8 +1,11 @@
 # WarehouseIQ — V1 Architecture & Delivery Plan
 
 **Status:** Documentation complete through the final pre-M0 architecture
-review. M0 (schema/RLS/auth foundations) is in progress. No product UI has
-been built yet.
+review. **M0 is complete** — schema, RLS, hash-chained ledger, and
+multi-tenant isolation are built and verified against a real Postgres
+instance (`supabase/tests/m0_acceptance.sql`, all 6 checks passing); repo
+scaffolding exists for both apps. No product UI has been built yet — that
+starts with M1.
 **Scope:** MVP suitable for customer/investor demos. Not the final
 enterprise product.
 
@@ -173,10 +176,14 @@ Full detail: `/docs/database/DATABASE.md` §5, `/docs/api/API.md`
 Summary only — full V1–V5 rationale in `/docs/roadmap/ROADMAP.md`. We
 build **one milestone at a time** and stop for review after each.
 
-- **M0 (in progress)** — Supabase schema (multi-tenant, hash-chained
-  ledger), RLS, auth roles, repo scaffolding. No UI yet. *Acceptance: a
-  manager and worker in two different orgs can both log in, and neither
-  can see the other's data; tampering with a ledger row is detectable.*
+- **M0 (complete)** — Supabase schema (multi-tenant, hash-chained ledger),
+  RLS, auth roles, repo scaffolding. No UI yet. *Acceptance, verified in
+  `supabase/tests/m0_acceptance.sql`: a manager and worker in two
+  different orgs can both operate, and neither can see the other's data;
+  no role — including a manager, including a direct SQL session — can
+  `UPDATE`/`DELETE` a ledger row; tampering with a ledger row (simulating
+  elevated database access bypassing the revoked grant) is detected by
+  recomputing the hash chain. All checks pass.*
 - **M1** — Manager Dashboard setup tools: Warehouses, Projects, Locations,
   QR generation, Expected Inventory (manual entry + CSV import).
 - **M2** — Worker App core loop: scan → photograph → AI extraction →

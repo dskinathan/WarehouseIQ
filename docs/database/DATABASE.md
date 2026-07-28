@@ -2,12 +2,21 @@
 
 **Engine:** Postgres via Supabase. **Tenancy:** every tenant-owned table
 carries `org_id` and is protected by Row-Level Security. **Immutability:**
-ledger tables (`pallet_movements`, `pallet_lifecycle_events`, `activity_log`,
-`csv_import_rows`) grant `INSERT` only — `UPDATE`/`DELETE` are revoked at the
+the trust-ledger tables — `pallet_movements`, `pallet_lifecycle_events`,
+`activity_log` — grant `INSERT` only: `UPDATE`/`DELETE` are revoked at the
 Postgres role level, not just blocked by policy, so "nothing is ever
 deleted" holds even against a mistake in application code or a manual
-dashboard edit. Every ledger row is additionally **hash-chained** (§6) so
-tampering is detectable even by an actor with elevated database access.
+dashboard edit. Every one of those rows is additionally **hash-chained**
+(§6) so tampering is detectable even by an actor with elevated database
+access. `csv_import_rows` deliberately gets a *weaker* guarantee: `DELETE`
+is revoked (a row is never removed, so a raw upload is always
+re-derivable), but `UPDATE` is allowed, because a row's `status` and
+`validation_errors` legitimately change as it moves through
+validation/correction before an import is committed — it's a staging
+table for an in-progress import, not part of the permanent inventory
+record. The permanent record is `expected_inventory_records` once
+committed, mutable like every other non-ledger table via `rpc/*` functions
+that log to `activity_log`.
 
 Every table below states **why it exists** — if we can't justify a table
 against the product bible, it doesn't belong in V1.
